@@ -375,8 +375,9 @@ export function SettingsPanel() {
       <div className={section}>
         <h3 className="text-sm font-semibold">Operation mode</h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          DEMO simulates the entire loop with a realistic business pool. LIVE
-          sends real email and generates with real AI once keys are configured.
+          DEMO simulates the loop with a realistic business pool. LIVE sends real
+          email, runs real AI copy and voice, and researches real websites once keys
+          are configured in the Keys tab.
         </p>
         <div className="mt-4 flex gap-2">
           {(["DEMO", "LIVE"] as const).map((mode) => (
@@ -434,9 +435,10 @@ export function SettingsPanel() {
             <p className="mt-1 max-w-xl text-xs leading-5 text-muted-foreground">
               Add keys in the project's Keys tab to go live:{" "}
               <span className="font-mono text-foreground">RESEND_API_KEY</span>{" "}
-              (real email delivery), <span className="font-mono text-foreground">OPENAI_API_KEY</span>{" "}
-              (AI-written copy), and a Twilio phone number for ECHO's live voice.
-              Without keys, the agency runs the full loop in demo mode.
+              (VEX/MERCURY email), <span className="font-mono text-foreground">GROQ_API_KEY</span>{" "}
+              (AI copy + ECHO conversation logic), <span className="font-mono text-foreground">ELEVENLABS_API_KEY</span>{" "}
+              (ECHO's voice), <span className="font-mono text-foreground">FIRECRAWL_API_KEY</span>{" "}
+              (ATLAS real web research), and Twilio credentials for ECHO inbound calls.
             </p>
           </div>
         </div>
