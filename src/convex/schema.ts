@@ -433,6 +433,29 @@ const schema = defineSchema(
       .index("byUser", ["userId"])
       .index("byLeadId", ["leadId"]),
 
+    // ── Generated websites (PIXEL premium HTML stored for serving) ──────────────
+    websites: defineTable(
+      {
+        userId: v.id("users"),
+        leadId: v.id("leads"),
+        slug: v.string(), // URL-safe business name
+        html: v.string(), // complete HTML content
+        industry: v.optional(v.string()),
+        businessName: v.string(),
+        status: en("generating", "ready", "served", "production"),
+        productionUrl: v.optional(v.string()),
+        paymentStatus: en("none", "pending", "paid", "failed"),
+        paymentIntentId: v.optional(v.string()),
+        generatedAt: v.number(),
+        servedAt: v.optional(v.number()),
+        paidAt: v.optional(v.number()),
+        deployedAt: v.optional(v.number()),
+      },
+    )
+      .index("byUser", ["userId"])
+      .index("byLeadId", ["leadId"])
+      .index("bySlug", ["slug"]),
+
     // ── Owner instructions (command chat → NEXUS) ───────────────────────────────
     instructions: defineTable(
       {
