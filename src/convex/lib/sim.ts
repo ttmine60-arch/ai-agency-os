@@ -32,6 +32,7 @@ import {
   type DemoBusiness,
 } from "./demo";
 import { generateWebsite } from "./websiteGenerator";
+import { researchWebsite } from "./firecrawl";
 
 const DAY = 86_400_000;
 
@@ -697,36 +698,58 @@ async function discoverLead(
   });
   await bumpMetric(ctx, userId, settings, "leadsCreated", 1);
   return leadId;
-}
-
-async function researchLead(
+}async function researchLead(
   ctx: MutationCtx,
   userId: Id<"users">,
   lead: LeadDoc,
   settings: SettingsDoc,
-) {    const biz =
-      findDemoBusiness(lead.business) ??
-      ({
-        business: lead.business,
-        industry: lead.industry ?? "Other",
-        location: lead.location ?? "",
-        website: lead.website ?? null,
-        email: lead.email ?? "",
-        phone: lead.phone ?? "",
-        description: lead.businessDescription ?? "",
-        services: lead.services ?? [],
-        weaknesses: lead.weaknesses ?? ["online presence underperforming"],
-        webPresence: lead.website ? 5 : 0,
-        takesCalls: true,
-      } satisfies DemoBusiness);
+) {
+  // ── LIVE mode: try Firecrawl first ───────────────────────────────────
+  let liveResult: Awaited<ReturnType<typeof researchWebsite>> | null = null;
+  if (settings.operationMode === "LIVE" && lead.website) {
+    liveResult = await researchWebsite(lead.business, lead.industry ?? "Service business", lead.website);
+  }
+
+  // Build a unified business view from live data (when available) or the demo pool.
+  const biz: DemoBusiness =
+    // LIVE result wins when it produced a scrape.
+    (liveResult != null
+      ? {
+          business: lead.business,
+          industry: lead.industry ?? "Service business",
+          location: lead.location ?? "",
+          website: lead.website ?? null,
+          email: liveResult.email ?? lead.email ?? "",
+          phone: liveResult.phone ?? lead.phone ?? "",
+          description: lead.businessDescription ?? "",
+          services: liveResult.services.length > 0 ? liveResult.services : (lead.services ?? []),
+          weaknesses: liveResult.weaknesses.length > 0 ? liveResult.weaknesses : (lead.weaknesses ?? ["online presence underperforming"]),
+          webPresence: liveResult.webPresence,
+          takesCalls: true,
+        }
+      : findDemoBusiness(lead.business) ??
+        {
+          business: lead.business,
+          industry: lead.industry ?? "Other",
+          location: lead.location ?? "",
+          website: lead.website ?? null,
+          email: lead.email ?? "",
+          phone: lead.phone ?? "",
+          description: lead.businessDescription ?? "",
+          services: lead.services ?? [],
+          weaknesses: lead.weaknesses ?? ["online presence underperforming"],
+          webPresence: lead.website ? 5 : 0,
+          takesCalls: true,
+        }) as DemoBusiness;
 
   const rec = computeRecommendation(biz, settings.pricing);
 
-  await ctx.db.patch(lead._id, {
+  // Merge live email/phone into the lead when Firecrawl found them.
+  const patch: Record<string, unknown> = {
     status: "QUALIFIED",
-    researchSummary: `${biz.business} is a ${biz.industry} business in ${biz.location}. ${biz.description ?? ""} ${
-      rec.recommendationReason
-    }`,
+    researchSummary: liveResult
+      ? `${biz.business} is a ${biz.industry} business in ${biz.location}. ${biz.description ?? ""} ${rec.recommendationReason}`
+      : `${biz.business} is a ${biz.industry} business in ${biz.location}. ${biz.description ?? ""} ${rec.recommendationReason}`,
     websiteScore: rec.websiteScore,
     opportunityScore: rec.opportunityScore,
     recommendedProduct: rec.recommendedProduct,
@@ -735,11 +758,26 @@ async function researchLead(
     weaknesses: rec.weaknesses,
     services: biz.services,
     updatedAt: now(),
-  });
+  };
+
+  // Prefer live-sourced contact details when Firecrawl found them.
+  if (liveResult) {
+    if (liveResult.email && !lead.email) patch.email = liveResult.email;
+    if (liveResult.phone && !lead.phone) patch.phone = liveResult.phone;
+    if (liveResult.services.length > 0 && (!lead.services || lead.services.length === 0)) {
+      patch.services = liveResult.services;
+    }
+    if (liveResult.weaknesses.length > 0 && (!lead.weaknesses || lead.weaknesses.length === 0)) {
+      patch.weaknesses = liveResult.weaknesses;
+    }
+  }
+
+  await ctx.db.patch(lead._id, patch as never);
   await trackEvent(ctx, userId, lead._id, "researched", {
     metadata: JSON.stringify({
       product: rec.recommendedProduct,
       score: rec.opportunityScore,
+      liveScrape: liveResult != null,
     }),
   });
 }
