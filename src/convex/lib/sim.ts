@@ -704,22 +704,21 @@ async function researchLead(
   userId: Id<"users">,
   lead: LeadDoc,
   settings: SettingsDoc,
-) {
-  const biz =
-    findDemoBusiness(lead.business) ??
-    ({
-      business: lead.business,
-      industry: lead.industry ?? "Other",
-      location: lead.location ?? "",
-      website: lead.website ?? null,
-      email: lead.email ?? "",
-      phone: lead.phone ?? "",
-      description: lead.businessDescription ?? "",
-      services: [],
-      weaknesses: ["online presence underperforming"],
-      webPresence: lead.website ? 5 : 0,
-      takesCalls: true,
-    } satisfies DemoBusiness);
+) {    const biz =
+      findDemoBusiness(lead.business) ??
+      ({
+        business: lead.business,
+        industry: lead.industry ?? "Other",
+        location: lead.location ?? "",
+        website: lead.website ?? null,
+        email: lead.email ?? "",
+        phone: lead.phone ?? "",
+        description: lead.businessDescription ?? "",
+        services: lead.services ?? [],
+        weaknesses: lead.weaknesses ?? ["online presence underperforming"],
+        webPresence: lead.website ? 5 : 0,
+        takesCalls: true,
+      } satisfies DemoBusiness);
 
   const rec = computeRecommendation(biz, settings.pricing);
 
@@ -769,6 +768,8 @@ async function buildDemo(
         description: lead.businessDescription ?? "Professional services",
         services: lead.services ?? [],
         weaknesses: lead.weaknesses ?? [],
+        webPresence: lead.website ? 5 : 0,
+        takesCalls: true,
       } satisfies DemoBusiness);
 
     // Generate the premium HTML website
@@ -793,6 +794,7 @@ async function buildDemo(
       industry: biz.industry,
       businessName: biz.business,
       status: "ready",
+      paymentStatus: "none",
       generatedAt: now(),
     });
 
@@ -1366,7 +1368,7 @@ async function processProductionDeployments(
     });
 
     // Step 4: ORION updates deal status
-    const lead = await ctx.db.query("leads").get(site.leadId);
+    const lead = await ctx.runQuery(api.leads.getById, { leadId: site.leadId as any }) as LeadDoc | null;
     if (lead) {
       await ctx.db.patch(lead._id, {
         status: "WON",

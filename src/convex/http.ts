@@ -2,6 +2,7 @@ import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { auth } from "./auth";
 import { handleVoiceRequest } from "./lib/voice";
+import { api } from "./_generated/api";
 
 const http = httpRouter();
 
@@ -19,11 +20,7 @@ http.route({
       return new Response("Not found", { status: 404 });
     }
 
-    // Look up the website by slug using ctx.runQuery
-    const site = await ctx.runQuery(
-      (await import("../_generated/api")).default.websites.getBySlug,
-      { slug },
-    );
+    const site = await ctx.runQuery(api.websites.getBySlug, { slug });
 
     if (!site) {
       return new Response(
@@ -33,10 +30,7 @@ http.route({
     }
 
     // Mark as served
-    await ctx.runMutation(
-      (await import("../_generated/api")).default.websites.markServed,
-      { websiteId: site._id },
-    );
+    await ctx.runMutation(api.websites.markServed, { websiteId: site._id });
 
     return new Response(site.html, {
       status: 200,
@@ -78,9 +72,10 @@ http.route({
     }
 
     try {
-      const api = (await import("../_generated/api")).default;
-      const site = await ctx.runQuery(api.websites.getById, { websiteId: websiteId as string });
-      const lead = await ctx.runQuery(api.leads.getById, { leadId: leadId as string });
+      const siteId = String(websiteId) as any;
+      const leadIdStr = String(leadId) as any;
+      const site = await ctx.runQuery(api.websites.getById, { websiteId: siteId });
+      const lead = await ctx.runQuery(api.leads.getById, { leadId: leadIdStr });
       if (!site || !lead) {
         return new Response(JSON.stringify({ error: "Lead or website not found" }), {
           status: 404,
@@ -89,6 +84,7 @@ http.route({
       }
 
       const origin = new URL(request.url).origin;
+      const business = (lead as { business: string }).business;
       const res = await fetch("https://api.stripe.com/v1/checkout/sessions", {
         method: "POST",
         headers: {
@@ -96,15 +92,15 @@ http.route({
           Authorization: `Bearer ${stripeKey}`,
         },
         body: new URLSearchParams({
-          "line_items[0][price_data][currency]": currency as string,
-          "line_items[0][price_data][product_data][name]": `Website — ${lead.business}`,
+          "line_items[0][price_data][currency]": String(currency),
+          "line_items[0][price_data][product_data][name]": `Website — ${business}`,
           "line_items[0][price_data][unit_amount]": String(Number(amount) * 100),
           "line_items[0][quantity]": "1",
           mode: "payment",
           success_url: `${origin}/dashboard?payment=success&lead=${leadId}`,
           cancel_url: `${origin}/dashboard?payment=cancelled&lead=${leadId}`,
-          "metadata[leadId]": leadId as string,
-          "metadata[websiteId]": websiteId as string,
+          "metadata[leadId]": String(leadId),
+          "metadata[websiteId]": String(websiteId),
         }),
       });
 
@@ -112,7 +108,7 @@ http.route({
       const session = (await res.json()) as { id: string; url: string };
 
       await ctx.runMutation(api.websites.markPaymentPending, {
-        websiteId: websiteId as string,
+        websiteId: siteId,
         paymentIntentId: session.id,
       });
 
@@ -143,14 +139,11 @@ http.route({
 
       if (event.type === "checkout.session.completed") {
         const session = event.data.object;
-        const websiteId = (session.metadata as Record<string, string>)?.websiteId;
-        const leadId = (session.metadata as Record<string, string>)?.leadId;
-
-        if (websiteId) {
-          const api = (await import("../_generated/api")).default;
+        const metadata = session.metadata as Record<string, string> | undefined;
+        if (metadata?.websiteId) {
           await _ctx.runMutation(api.websites.markPaid, {
-            websiteId,
-            leadId: leadId ?? undefined,
+            websiteId: metadata.websiteId as any,
+            leadId: (metadata.leadId as any) ?? undefined,
           });
         }
       }

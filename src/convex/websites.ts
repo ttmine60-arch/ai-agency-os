@@ -12,19 +12,19 @@ export const getBySlug = query({
   },
 });
 
-/** Get a website by ID (used by payment flow). */
+/** Get a website by ID. */
 export const getById = query({
-  args: { websiteId: v.string() },
+  args: { websiteId: v.id("websites") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.websiteId as any);
+    return await ctx.db.get(args.websiteId);
   },
 });
 
 /** Get a lead by ID (used by payment flow). */
 export const getLeadById = query({
-  args: { leadId: v.string() },
+  args: { leadId: v.id("leads") },
   handler: async (ctx, args) => {
-    return await ctx.db.get(args.leadId as any);
+    return await ctx.db.get(args.leadId);
   },
 });
 
@@ -42,66 +42,62 @@ export const markServed = mutation({
 /** Mark payment as pending (Stripe checkout session created). */
 export const markPaymentPending = mutation({
   args: {
-    websiteId: v.string(),
+    websiteId: v.id("websites"),
     paymentIntentId: v.string(),
   },
   handler: async (ctx, args) => {
-    const site = await ctx.db.get(args.websiteId as any);
-    if (site) {
-      await ctx.db.patch(site._id, {
-        paymentStatus: "pending",
-        paymentIntentId: args.paymentIntentId,
-      });
-    }
+    await ctx.db.patch(args.websiteId, {
+      paymentStatus: "pending",
+      paymentIntentId: args.paymentIntentId,
+    });
   },
 });
 
 /** Mark website as paid (called by Stripe webhook). */
 export const markPaid = mutation({
   args: {
-    websiteId: v.string(),
-    leadId: v.optional(v.string()),
+    websiteId: v.id("websites"),
+    leadId: v.optional(v.id("leads")),
   },
   handler: async (ctx, args) => {
-    const site = await ctx.db.get(args.websiteId as any);
-    if (site) {
-      await ctx.db.patch(site._id, {
-        paymentStatus: "paid",
-        paidAt: Date.now(),
-      });
+    const site = await ctx.db.get(args.websiteId);
+    if (!site) return;
 
-      // Update the lead
-      if (args.leadId) {
-        const lead = await ctx.db.get(args.leadId as any);
-        if (lead) {
-          await ctx.db.patch(lead._id, {
-            status: "PROPOSAL",
-            dealValue: site.businessName ? undefined : undefined, // will be set by the cycle
-            updatedAt: Date.now(),
-          });
-        }
+    await ctx.db.patch(args.websiteId, {
+      paymentStatus: "paid",
+      paidAt: Date.now(),
+    });
+
+    // Update the lead
+    if (args.leadId) {
+      const lead = await ctx.db.get(args.leadId);
+      if (lead) {
+        await ctx.db.patch(lead._id, {
+          status: "PROPOSAL",
+          updatedAt: Date.now(),
+        });
       }
-
-      // Log the payment
-      await ctx.db.insert("agentLogs", {
-        userId: site.userId,
-        agent: "NEXUS",
-        leadId: args.leadId as any,
-        level: "ok",
-        message: `Payment confirmed for ${site.businessName} — production deployment queued`,
-        createdAt: Date.now(),
-      });
-
-      await ctx.db.insert("notifications", {
-        userId: site.userId,
-        type: "deal",
-        title: `Payment received — ${site.businessName}`,
-        body: `Website purchase confirmed. Production deployment will begin automatically.`,
-        leadId: args.leadId as any,
-        read: false,
-        createdAt: Date.now(),
-      });
     }
+
+    // Log the payment
+    await ctx.db.insert("agentLogs", {
+      userId: site.userId,
+      agent: "NEXUS",
+      leadId: args.leadId,
+      level: "ok",
+      message: `Payment confirmed for ${site.businessName} — production deployment queued`,
+      createdAt: Date.now(),
+    });
+
+    await ctx.db.insert("notifications", {
+      userId: site.userId,
+      type: "deal",
+      title: `Payment received — ${site.businessName}`,
+      body: `Website purchase confirmed. Production deployment will begin automatically.`,
+      leadId: args.leadId,
+      read: false,
+      createdAt: Date.now(),
+    });
   },
 });
 
