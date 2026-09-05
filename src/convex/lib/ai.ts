@@ -6,13 +6,14 @@ import { action } from "../_generated/server";
 /**
  * Text-generation seam for the agency engine.
  *
- * - LIVE mode (OPENAI_API_KEY set): calls the OpenAI chat completions API.
+ * - LIVE mode (GROQ_API_KEY set): calls the Groq chat completions API
+ *   (OpenAI-compatible) using llama-3.3-70b-versatile for fast, free inference.
  * - DEMO mode (no key): returns a simple fallback so the pipeline never
  *   blocks on missing credentials.
  *
  * The demo engine mostly uses deterministic templates in lib/demo.ts; this
  * action is the seam where real personalization plugs in once the owner adds
- * an OPENAI_API_KEY.
+ * a GROQ_API_KEY.
  */
 export const generateText = action({
   args: {
@@ -22,7 +23,7 @@ export const generateText = action({
     maxTokens: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) {
       return {
         text: "",
@@ -32,14 +33,14 @@ export const generateText = action({
     }
 
     try {
-      const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: "gpt-4o-mini",
+          model: "llama-3.3-70b-versatile",
           temperature: args.temperature ?? 0.7,
           max_tokens: args.maxTokens ?? 500,
           messages: [
@@ -50,7 +51,7 @@ export const generateText = action({
       });
 
       if (!res.ok) {
-        throw new Error(`OpenAI error ${res.status}: ${await res.text()}`);
+        throw new Error(`Groq error ${res.status}: ${await res.text()}`);
       }
 
       const data = (await res.json()) as {
@@ -58,7 +59,7 @@ export const generateText = action({
       };
       return {
         text: data.choices[0]?.message?.content ?? "",
-        model: "gpt-4o-mini",
+        model: "llama-3.3-70b-versatile",
         simulated: false,
       };
     } catch (err) {
