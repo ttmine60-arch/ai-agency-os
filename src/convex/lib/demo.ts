@@ -86,6 +86,7 @@ export const REPLY_POOL = [
   "Honestly we've been burned before. What makes you different?",
   "Please take us off your list.",
   "Can you send a proposal with the website plus receptionist option?",
+  "Quick question before we go further — are you a real person or is this AI?",
 ];
 
 /** Follow-up copy MERCURY uses. */
@@ -125,4 +126,18 @@ export function randInt(min: number, max: number): number {
 
 export function chance(p: number): boolean {
   return Math.random() < p;
+}
+
+/** Weighted random pick — items with higher weight are chosen more often. */
+export function weightedPick<T>(items: readonly T[], weight: (item: T) => number): T {
+  if (items.length === 0) throw new Error("weightedPick: empty list");
+  const weights = items.map(weight);
+  const total = weights.reduce((a, b) => a + Math.max(0, b), 0);
+  if (total <= 0) return items[0];
+  let r = Math.random() * total;
+  for (let i = 0; i < items.length; i++) {
+    r -= Math.max(0, weights[i]);
+    if (r <= 0) return items[i];
+  }
+  return items[items.length - 1];
 }

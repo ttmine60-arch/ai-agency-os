@@ -313,6 +313,8 @@ const schema = defineSchema(
         // Deal state
         nextAction: v.optional(v.string()),
         nextActionAt: v.optional(v.number()),
+        // ORION's estimate of how likely this deal is to close (0-100)
+        winProbability: v.optional(v.number()),
         appointment: v.optional(
           v.object({
             scheduledAt: v.optional(v.number()),

@@ -28,6 +28,7 @@ import {
   chance,
   pick,
   randInt,
+  weightedPick,
   type DemoBusiness,
 } from "./demo";
 
@@ -333,6 +334,22 @@ export async function simulateCycle(
     });
   }
 
+  // Failure detection: any agent stuck in "error" gets recovered automatically.
+  for (const [, agent] of agents) {
+    if (agent.status !== "error" || agent.paused) continue;
+    await setAgent(ctx, agent, {
+      status: "online",
+      statusMessage: "recovered by NEXUS after failure",
+    });
+    await logAgent(
+      ctx,
+      userId,
+      agent.name,
+      "warn",
+      "NEXUS detected a failure and restarted the agent",
+    );
+  }
+
   // ── 1 · NEXUS processes owner instructions ──────────────────────────────
   await processInstructions(ctx, userId, settings);
 
@@ -526,6 +543,28 @@ export async function simulateCycle(
     if (moved) summary.interested++;
   }
 
+  // Win-probability sweep: ORION keeps its close estimate fresh for every
+  // active deal, based on lead score, conversation stage and industry form.
+  const activeDeals = await ctx.db
+    .query("leads")
+    .withIndex("byUser", (q) => q.eq("userId", userId))
+    .filter((q) =>
+      q.or(
+        q.eq(q.field("status"), "REPLIED"),
+        q.eq(q.field("status"), "INTERESTED"),
+        q.eq(q.field("status"), "DEMO_SENT"),
+        q.eq(q.field("status"), "MEETING"),
+        q.eq(q.field("status"), "PROPOSAL"),
+      ),
+    )
+    .collect();
+  for (const lead of activeDeals) {
+    await ctx.db.patch(lead._id, {
+      winProbability: estimateWinProbability(lead, settings),
+      updatedAt: now(),
+    });
+  }
+
   // ── 9 · meetings get booked, deals close ────────────────────────────────
   const interested = await ctx.db
     .query("leads")
@@ -620,7 +659,15 @@ async function discoverLead(
   );
   if (candidates.length === 0) return null;
 
-  const biz = pick(candidates);
+  // NEXUS weights discovery toward the industries that perform best in this
+  // agency's metrics, with an extra boost for configured target industries.
+  const perf = settings.metrics.industryPerformance;
+  const biz = weightedPick(candidates, (b) => {
+    const industryScore = perf[b.industry]?.score ?? 0;
+    const performanceWeight = 1 + industryScore / 50; // 1x … 3x
+    const targetBoost = settings.targetIndustries.includes(b.industry) ? 1.6 : 1;
+    return performanceWeight * targetBoost;
+  });
   const t = now();
   const leadId = await ctx.db.insert("leads", {
     userId,
@@ -940,6 +987,9 @@ function craftVexResponse(
   if (/burned|different|trust/.test(reply)) {
     return `Totally fair. What makes us different: every demo is built for your actual business before you pay a cent, and there are no long-term contracts — you own everything we build. If you'd like, I'll send over references from other ${lead.industry ?? "local"} businesses first.`;
   }
+  if (/are you|ai or|real person|robot|human being|is this ai/.test(reply)) {
+    return `Straight answer: I'm an AI — the sales agent in B2K Agency's team of AI specialists, working on behalf of the agency's owner. Nothing about the offer is automated away from you: the demo is built specifically for ${lead.business}, and a human from the agency is available any time you'd like to talk. Happy to loop them in — just say the word.`;
+  }
   return `Thanks for getting back to us — happy to answer any questions. ${
     demo ? `The demo is live here: ${demo}.` : ""
   } Would a quick 15-minute call this week work for you?`;
@@ -960,6 +1010,31 @@ function productLabel(product: LeadDoc["recommendedProduct"]): string {
   }
 }
 
+/**
+ * ORION's estimate (0-100) that an active deal closes, derived from the
+ * lead score, the conversation stage and the industry's track record.
+ */
+function estimateWinProbability(
+  lead: Pick<LeadDoc, "leadScore" | "status" | "industry">,
+  settings: SettingsDoc,
+): number {
+  const base = lead.leadScore ?? 50;
+  const stageBoost: Record<string, number> = {
+    REPLIED: 8,
+    INTERESTED: 18,
+    DEMO_SENT: 24,
+    MEETING: 36,
+    PROPOSAL: 46,
+  };
+  const industryScore = lead.industry
+    ? settings.metrics.industryPerformance[lead.industry]?.score ?? 0
+    : 0;
+  return Math.max(
+    5,
+    Math.min(96, base + (stageBoost[lead.status] ?? 0) + industryScore / 10),
+  );
+}
+
 async function orionScore(
   ctx: MutationCtx,
   userId: Id<"users">,
@@ -975,10 +1050,15 @@ async function orionScore(
   if (!highIntent) return false;
 
   const t = now();
+  const newScore = Math.max(lead.leadScore ?? 50, 78);
   await ctx.db.patch(lead._id, {
     status: "INTERESTED",
     highIntent: true,
-    leadScore: Math.max(lead.leadScore ?? 50, 78),
+    leadScore: newScore,
+    winProbability: estimateWinProbability(
+      { leadScore: newScore, status: "INTERESTED", industry: lead.industry },
+      settings,
+    ),
     nextAction: "VEX sends demo link",
     updatedAt: t,
   });
@@ -1484,6 +1564,13 @@ export async function seedPipeline(
       base.lastMessageFromProspect = "Please take us off your list.";
     } else {
       base.status = "NEW";
+    }
+
+    if (["REPLIED", "DEMO_SENT", "INTERESTED", "MEETING", "PROPOSAL", "WON"].includes(stage)) {
+      base.winProbability = estimateWinProbability(
+        { leadScore: base.leadScore, status: base.status, industry: base.industry },
+        settings,
+      );
     }
 
     base.updatedAt = t0 + (base.lastContactAt ? 12 * 3_600_000 : 0) + randInt(0, 60) * 60_000;

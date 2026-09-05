@@ -174,22 +174,47 @@ export function LeadSheet({
               )}
 
               {/* scores */}
-              {lead.websiteScore !== undefined && (
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-xl border border-white/8 bg-card/60 p-4">
-                    <p className="text-xs text-muted-foreground">Website score</p>
-                    <p className="mt-1 font-mono text-2xl font-bold">
-                      {lead.websiteScore}
-                      <span className="text-sm text-muted-foreground">/100</span>
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-white/8 bg-card/60 p-4">
-                    <p className="text-xs text-muted-foreground">Opportunity score</p>
-                    <p className="mt-1 font-mono text-2xl font-bold text-amber-400">
-                      {lead.opportunityScore}
-                      <span className="text-sm text-muted-foreground">/100</span>
-                    </p>
-                  </div>
+              {(lead.websiteScore !== undefined ||
+                lead.opportunityScore !== undefined ||
+                lead.winProbability !== undefined) && (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {lead.websiteScore !== undefined && (
+                    <div className="rounded-xl border border-white/8 bg-card/60 p-4">
+                      <p className="text-xs text-muted-foreground">Website score</p>
+                      <p className="mt-1 font-mono text-2xl font-bold">
+                        {lead.websiteScore}
+                        <span className="text-sm text-muted-foreground">/100</span>
+                      </p>
+                    </div>
+                  )}
+                  {lead.opportunityScore !== undefined && (
+                    <div className="rounded-xl border border-white/8 bg-card/60 p-4">
+                      <p className="text-xs text-muted-foreground">Opportunity score</p>
+                      <p className="mt-1 font-mono text-2xl font-bold text-amber-400">
+                        {lead.opportunityScore}
+                        <span className="text-sm text-muted-foreground">/100</span>
+                      </p>
+                    </div>
+                  )}
+                  {lead.winProbability !== undefined && (
+                    <div className="rounded-xl border border-white/8 bg-card/60 p-4">
+                      <p className="text-xs text-muted-foreground">
+                        Win probability · ORION
+                      </p>
+                      <p
+                        className={`mt-1 font-mono text-2xl font-bold ${
+                          lead.winProbability >= 60
+                            ? "text-emerald-400"
+                            : lead.winProbability >= 35
+                              ? "text-amber-400"
+                              : "text-muted-foreground"
+                        }`}
+                      >
+                        {lead.winProbability}
+                        <span className="text-sm text-muted-foreground">%</span>
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 
