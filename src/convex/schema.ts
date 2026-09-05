@@ -16,6 +16,10 @@ export const roleValidator = v.union(
 );
 export type Role = Infer<typeof roleValidator>;
 
+/** Shorthand for a union of string literals (v.enum was removed in Convex 1.42). */
+const en = <T extends string>(...values: T[]) =>
+  v.union(...values.map((value) => v.literal(value)));
+
 // ── Agency OS ────────────────────────────────────────────────────────────────
 
 /** Industry categories the agency can target. */
@@ -40,7 +44,7 @@ export const INDUSTRIES = [
   "Other",
 ] as const;
 
-export const industryValidator = v.union(...INDUSTRIES.map((i) => v.literal(i)));
+export const industryValidator = en(...INDUSTRIES);
 export type Industry = Infer<typeof industryValidator>;
 
 /** Where a lead is in the pipeline. */
@@ -59,7 +63,7 @@ export const LEAD_STATUS = [
   "OPTED_OUT",
 ] as const;
 
-export const leadStatusValidator = v.union(...LEAD_STATUS.map((s) => v.literal(s)));
+export const leadStatusValidator = en(...LEAD_STATUS);
 export type LeadStatus = Infer<typeof leadStatusValidator>;
 
 /** Which autonomous agent is acting. */
@@ -74,15 +78,12 @@ export const AGENT_NAMES = [
   "ORION",
 ] as const;
 
-export const agentNameValidator = v.union(...AGENT_NAMES.map((a) => v.literal(a)));
+export const agentNameValidator = en(...AGENT_NAMES);
 export type AgentName = Infer<typeof agentNameValidator>;
 
 /** Live / demo mode controls what the system is allowed to do. */
-export const OPERATION_MODE = [
-  "DEMO",
-  "LIVE",
-] as const;
-export const operationModeValidator = v.union(...OPERATION_MODE.map((m) => v.literal(m)));
+export const OPERATION_MODE = ["DEMO", "LIVE"] as const;
+export const operationModeValidator = en(...OPERATION_MODE);
 export type OperationMode = Infer<typeof operationModeValidator>;
 
 /** Safety toggle names for the emergency control panel. */
@@ -95,9 +96,7 @@ export const SAFETY_TOGGLE_KEYS = [
   "pauseReceptionist",
 ] as const;
 
-export const safetyToggleKeyValidator = v.union(
-  ...SAFETY_TOGGLE_KEYS.map((k) => v.literal(k)),
-);
+export const safetyToggleKeyValidator = en(...SAFETY_TOGGLE_KEYS);
 export type SafetyToggleKey = Infer<typeof safetyToggleKeyValidator>;
 
 // ── Tables ───────────────────────────────────────────────────────────────────
@@ -118,8 +117,10 @@ const schema = defineSchema(
       role: v.optional(roleValidator), // role of the user. do not remove
     }).index("email", ["email"]), // index for the email. do not remove or modify
 
-    // ── Agency settings (one per owner, stored on the user document) ────────────
+    // ── Agency settings (one per owner) ─────────────────────────────────────────
     agencySettings: defineTable({
+      userId: v.id("users"),
+
       // Core business identity
       agencyName: v.optional(v.string()),
       agencySignature: v.optional(v.string()),
@@ -133,7 +134,7 @@ const schema = defineSchema(
       excludedEmails: v.array(v.string()),
 
       // Pricing (ZAR). Editable by owner. NEXUS recommends within these bounds.
-      pricing: defineTable({
+      pricing: v.object({
         websiteFrom: v.number(),
         premiumWebsiteFrom: v.number(),
         websitePlusReceptionistFrom: v.number(),
@@ -143,8 +144,8 @@ const schema = defineSchema(
       }),
 
       // Deliverability
-      email: defineTable({
-        provider: v.enum("resend"),
+      email: v.object({
+        provider: en("resend"),
         fromAddress: v.optional(v.string()),
         fromName: v.optional(v.string()),
         dailyLimit: v.number(),
@@ -153,7 +154,7 @@ const schema = defineSchema(
       }),
 
       // Outreach behavior
-      outreach: defineTable({
+      outreach: v.object({
         followUpDays: v.array(v.number()),
         maxFollowUps: v.number(),
         minHoursBetweenEmails: v.number(),
@@ -161,7 +162,7 @@ const schema = defineSchema(
       }),
 
       // Safety + emergency controls
-      safety: defineTable({
+      safety: v.object({
         stopAllAgents: v.boolean(),
         pauseEmail: v.boolean(),
         pauseSales: v.boolean(),
@@ -171,7 +172,7 @@ const schema = defineSchema(
       }),
 
       // Metrics for autonomous learning.
-      metrics: defineTable({
+      metrics: v.object({
         leadsCreated: v.number(),
         emailsSent: v.number(),
         repliesReceived: v.number(),
@@ -181,35 +182,42 @@ const schema = defineSchema(
         dealsWon: v.number(),
         dealValueWon: v.number(),
         // per-industry performance: industry -> { leads, replies, demos, won, value }
-        industryPerformance: v.map(v.string(), v.object({
-          leads: v.number(),
-          replies: v.number(),
-          demos: v.number(),
-          won: v.number(),
-          value: v.number(),
-          score: v.number(),
-        })),
+        industryPerformance: v.record(
+          v.string(),
+          v.object({
+            leads: v.number(),
+            replies: v.number(),
+            demos: v.number(),
+            won: v.number(),
+            value: v.number(),
+            score: v.number(),
+          }),
+        ),
       }),
 
       // Mode
-      operationMode: v.enum("DEMO", "LIVE"),
+      operationMode: en("DEMO", "LIVE"),
 
       // Demo-mode defaults (used when no live API keys are configured)
       demoEmail: v.optional(v.string()),
       demoDomain: v.optional(v.string()),
+
+      // True once first-run setup + demo seeding has completed
+      initialized: v.optional(v.boolean()),
 
       // Timestamps
       createdAt: v.number(),
       updatedAt: v.number(),
     }).index("byUser", ["userId"]),
 
-    // ── Agents ──────────────────────────────────────────────────────────────────
+    // ── Agents (one roster per owner) ───────────────────────────────────────────
     agents: defineTable(
       {
-        name: v.string(),
+        userId: v.id("users"),
+        name: en("NEXUS", "NOVA", "ATLAS", "VEX", "PIXEL", "ECHO", "MERCURY", "ORION"),
         displayName: v.string(),
         role: v.string(),
-        status: v.enum(
+        status: en(
           "idle",
           "working",
           "searching",
@@ -233,12 +241,15 @@ const schema = defineSchema(
         currentLeadId: v.optional(v.id("leads")),
       },
     )
+      .index("byUser", ["userId"])
       .index("byName", ["name"])
       .index("byStatus", ["status"]),
 
     // ── Leads (CRM) ─────────────────────────────────────────────────────────────
     leads: defineTable(
       {
+        userId: v.id("users"),
+
         // Identity
         business: v.string(),
         industry: v.optional(v.string()),
@@ -259,12 +270,12 @@ const schema = defineSchema(
         websiteScore: v.optional(v.number()),
         opportunityScore: v.optional(v.number()),
         recommendedProduct: v.optional(
-          v.union(
-            v.literal("WEBSITE"),
-            v.literal("PREMIUM_WEBSITE"),
-            v.literal("WEBSITE_PLUS_RECEPTIONIST"),
-            v.literal("AI_RECEPTIONIST"),
-            v.literal("NONE"),
+          en(
+            "WEBSITE",
+            "PREMIUM_WEBSITE",
+            "WEBSITE_PLUS_RECEPTIONIST",
+            "AI_RECEPTIONIST",
+            "NONE",
           ),
         ),
         recommendedPrice: v.optional(v.number()),
@@ -280,7 +291,7 @@ const schema = defineSchema(
         lastOfferBody: v.optional(v.string()),
 
         // Conversation state
-        status: v.enum(
+        status: en(
           "NEW",
           "RESEARCHING",
           "QUALIFIED",
@@ -324,6 +335,7 @@ const schema = defineSchema(
         updatedAt: v.number(),
       },
     )
+      .index("byUser", ["userId"])
       .index("byStatus", ["status"])
       .index("byIndustry", ["industry"])
       .index("byCreatedAt", ["createdAt"])
@@ -334,8 +346,24 @@ const schema = defineSchema(
     // ── Outreach events (for audit, deliverability, and learning) ────────────────
     outreachEvents: defineTable(
       {
+        userId: v.id("users"),
         leadId: v.id("leads"),
-        type: v.enum("discovered", "researched", "offer_sent", "reply_received", "demo_sent", "demo_viewed", "follow_up_sent", "appointment_booked", "status_changed", "deal_won", "deal_lost", "opted_out", "email_bounce", "email_complaint"),
+        type: en(
+          "discovered",
+          "researched",
+          "offer_sent",
+          "reply_received",
+          "demo_sent",
+          "demo_viewed",
+          "follow_up_sent",
+          "appointment_booked",
+          "status_changed",
+          "deal_won",
+          "deal_lost",
+          "opted_out",
+          "email_bounce",
+          "email_complaint",
+        ),
         subject: v.optional(v.string()),
         body: v.optional(v.string()),
         // For offer_sent / reply events, capture the raw text so the owner can read it.
@@ -343,45 +371,83 @@ const schema = defineSchema(
         metadata: v.optional(v.string()), // JSON string for structured extra data
         createdAt: v.number(),
       },
-    ).index("byLeadId", ["leadId"]),
+    )
+      .index("byUser", ["userId"])
+      .index("byLeadId", ["leadId"]),
 
     // ── Agent logs (persisted, queryable, for transparency) ─────────────────────
     agentLogs: defineTable(
       {
-        agent: v.string(),
+        userId: v.id("users"),
+        agent: en(
+          "NEXUS",
+          "NOVA",
+          "ATLAS",
+          "VEX",
+          "PIXEL",
+          "ECHO",
+          "MERCURY",
+          "ORION",
+        ),
         leadId: v.optional(v.id("leads")),
-        level: v.enum("info", "ok", "warn", "error"),
+        level: en("info", "ok", "warn", "error"),
         message: v.string(),
         detail: v.optional(v.string()),
         createdAt: v.number(),
       },
-    ).index("byAgent", ["agent"]),
+    )
+      .index("byUser", ["userId"])
+      .index("byAgent", ["agent"])
+      .index("byCreatedAt", ["createdAt"]),
 
     // ── Notifications (for the owner) ───────────────────────────────────────────
     notifications: defineTable(
       {
-        id: v.string(),
-        type: v.enum("high_intent", "meeting", "deal", "error", "info"),
+        userId: v.id("users"),
+        type: en("high_intent", "meeting", "deal", "error", "info"),
         title: v.string(),
         body: v.optional(v.string()),
         leadId: v.optional(v.id("leads")),
         read: v.boolean(),
         createdAt: v.number(),
       },
-    ).index("byCreatedAt", ["createdAt"]),
+    )
+      .index("byUser", ["userId"])
+      .index("byCreatedAt", ["createdAt"]),
 
     // ── Demo builds (PIXEL artifact tracking) ───────────────────────────────────
     demoBuilds: defineTable(
       {
+        userId: v.id("users"),
         leadId: v.id("leads"),
-        kind: v.enum("website", "receptionist"),
-        status: v.enum("queued", "building", "built", "deployed", "failed"),
+        kind: en("website", "receptionist"),
+        status: en("queued", "building", "built", "deployed", "failed"),
         deployUrl: v.optional(v.string()),
         error: v.optional(v.string()),
         startedAt: v.optional(v.number()),
         finishedAt: v.optional(v.number()),
       },
-    ).index("byLeadId", ["leadId"]),
+    )
+      .index("byUser", ["userId"])
+      .index("byLeadId", ["leadId"]),
+
+    // ── Owner instructions (command chat → NEXUS) ───────────────────────────────
+    instructions: defineTable(
+      {
+        userId: v.id("users"),
+        author: en("owner", "system"),
+        agent: v.optional(
+          en("NEXUS", "NOVA", "ATLAS", "VEX", "PIXEL", "ECHO", "MERCURY", "ORION"),
+        ),
+        text: v.string(),
+        status: en("queued", "processing", "done", "failed"),
+        response: v.optional(v.string()),
+        createdAt: v.number(),
+        processedAt: v.optional(v.number()),
+      },
+    )
+      .index("byUser", ["userId"])
+      .index("byCreatedAt", ["createdAt"]),
   },
   {
     schemaValidation: false,

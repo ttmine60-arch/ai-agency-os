@@ -124,3 +124,36 @@
     cursor: pointer;
   }
 }
+
+/* ── B2K Agency OS theme additions ─────────────────────────────── */
+
+.bg-grid {
+  background-image:
+    linear-gradient(to right, rgb(255 255 255 / 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(255 255 255 / 0.04) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+
+.bg-grid-fade {
+  -webkit-mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 100%);
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 40%, transparent 100%);
+}
+
+.text-glow-amber {
+  text-shadow: 0 0 24px rgb(245 158 11 / 0.45), 0 0 64px rgb(245 158 11 / 0.2);
+}
+
+.terminal-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.terminal-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.terminal-scroll::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 0.12);
+  border-radius: 9999px;
+}
+.terminal-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgb(255 255 255 / 0.22);
+}
