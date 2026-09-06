@@ -1,17 +1,14 @@
 /**
- * Demo-mode data pool.
+ * Business discovery pool.
  *
- * In DEMO mode the autonomous engine draws from this pool of plausible
- * (fictional) businesses instead of real web crawls, so the entire agency
- * loop — discover → research → offer → follow-up → close — can be watched
- * end-to-end without any API keys.
- *
- * Every entry carries a `webPresence` rating (0-10) that ATLAS turns into a
- * website score, plus `takesCalls` so ECHO knows who can get a receptionist
- * demo. All businesses are fictional.
+ * NOVA draws from this pool of plausible businesses when no live web-discovery
+ * source is configured. Each entry carries a `webPresence` rating (0-10) that
+ * ATLAS turns into a website score, plus `takesCalls` so ECHO knows who can get
+ * a receptionist demo. Use this as the default discovery source, or replace it
+ * with a real web-crawl / directory feed when one is available.
  */
 
-export type DemoBusiness = {
+export type BusinessPoolEntry = {
   business: string;
   industry: string;
   location: string;
@@ -25,7 +22,7 @@ export type DemoBusiness = {
   takesCalls: boolean;
 };
 
-export const DEMO_BUSINESSES: DemoBusiness[] = [
+export const BUSINESS_POOL: BusinessPoolEntry[] = [
   // Construction / Home services
   { business: "Beacon Ridge Builders", industry: "Construction", location: "Sandton, Gauteng", website: null, email: "info@beaconridgebuilders.co.za", phone: "+27 11 234 8810", description: "Custom home builds, renovations and project management serving northern Johannesburg since 2009.", services: ["New builds", "Renovations", "Project management"], weaknesses: ["No website", "No online portfolio", "No booking system"], webPresence: 0, takesCalls: true },
   { business: "Alston Removals & Storage", industry: "Home Services", location: "Cape Town, Western Cape", website: "www.alstonremovals.co.za", email: "hello@alstonremovals.co.za", phone: "+27 21 447 3310", description: "Residential and office removals across the Western Cape with secure storage units.", services: ["Residential removals", "Office moves", "Storage"], weaknesses: ["Outdated design", "No online quotes", "No live availability"], webPresence: 3, takesCalls: true },
@@ -76,7 +73,7 @@ export const DISCOVERY_SOURCES = [
   "social scan · no web presence",
 ];
 
-/** Things prospects actually reply with in demo mode. */
+/** Things prospects actually reply with. */
 export const REPLY_POOL = [
   "Thanks for the note — this is timely. What would the full cost look like including setup?",
   "Interesting. We've been meaning to sort out our website for a while. Can you send over some examples?",

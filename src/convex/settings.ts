@@ -52,8 +52,6 @@ export const updateSettings = mutation({
     pricing: v.optional(pricingValidator),
     email: v.optional(emailValidator),
     outreach: v.optional(outreachValidator),
-    demoEmail: v.optional(v.string()),
-    demoDomain: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -115,27 +113,3 @@ export const toggleSafety = mutation({
   },
 });
 
-export const setMode = mutation({
-  args: { mode: v.union(v.literal("DEMO"), v.literal("LIVE")) },
-  handler: async (ctx, { mode }) => {
-    const userId = await getAuthUserId(ctx);
-    if (userId === null) throw new Error("Not authenticated");
-
-    const settings = await getAgency(ctx, userId);
-    if (!settings) throw new Error("Agency not initialized");
-
-    await ctx.db.patch(settings._id, {
-      operationMode: mode,
-      updatedAt: Date.now(),
-    });
-    await logAgent(
-      ctx,
-      userId,
-      "NEXUS",
-      "info",
-      mode === "LIVE"
-        ? "Switched to LIVE mode — real email delivery and AI generation enabled"
-        : "Switched to DEMO mode — simulated operation, no external sends",
-    );
-  },
-});

@@ -4,15 +4,15 @@
  * This module is what makes B2K Agency OS feel like a hired company: a single
  * cycle advances the entire pipeline the way NEXUS would direct it —
  *
- *   NOVA discovers → ATLAS researches → PIXEL builds demos →
+ *   NOVA discovers → ATLAS researches → PIXEL builds websites →
  *   VEX sends offers → prospects reply → MERCURY follows up →
  *   ORION scores intent → meetings get booked → deals close.
  *
- * In DEMO mode the cycle draws on the fictional business pool in lib/demo.ts.
- * The same code paths run in LIVE mode; the email/ai seams (lib/email.ts,
- * lib/ai.ts) and the safety toggles are respected the same way. The cron in
- * crons.ts calls runCycle every few minutes so the agency keeps working with
- * zero owner interaction.
+ * NOVA discovers from the business pool in lib/demo.ts (real web discovery can
+ * be wired in via Firecrawl when a business has a website). Each integration —
+ * email, AI, voice, web research, payments — is gated by its own API key. The
+ * cron in crons.ts calls runCycle every few minutes so the agency keeps working
+ * with zero owner interaction.
  */
 
 import { api } from "../_generated/api";
@@ -20,7 +20,7 @@ import { MutationCtx } from "../_generated/server";
 import type { Doc, Id } from "../_generated/dataModel";
 import { AGENT_ROSTER } from "./roster";
 import {
-  DEMO_BUSINESSES,
+  BUSINESS_POOL,
   DISCOVERY_SOURCES,
   FOLLOW_UP_POOL,
   INDUSTRY_WEAKNESSES,
@@ -29,7 +29,7 @@ import {
   pick,
   randInt,
   weightedPick,
-  type DemoBusiness,
+  type BusinessPoolEntry,
 } from "./demo";
 import { generateWebsite } from "./websiteGenerator";
 import { researchWebsite } from "./firecrawl";
@@ -135,9 +135,9 @@ export async function setAgent(
   });
 }
 
-/** Look up the demo-pool business a lead was created from. */
-export function findDemoBusiness(business: string): DemoBusiness | undefined {
-  return DEMO_BUSINESSES.find(
+/** Look up a business-pool entry matching the given business name. */
+export function findBusinessPoolEntry business: string): BusinessPoolEntry | undefined {
+  return BUSINESS_POOL.find(
     (b) => b.business.toLowerCase() === business.toLowerCase(),
   );
 }
@@ -658,7 +658,7 @@ async function discoverLead(
     .withIndex("byUser", (q) => q.eq("userId", userId))
     .collect();
   const taken = new Set(existing.map((l) => l.business.toLowerCase()));
-  const candidates = DEMO_BUSINESSES.filter(
+  const candidates = BUSINESS_POOL.filter(
     (b) => !taken.has(b.business.toLowerCase()),
   );
   if (candidates.length === 0) return null;
@@ -706,7 +706,8 @@ async function discoverLead(
 ) {
   // ── LIVE mode: try Firecrawl first ───────────────────────────────────
   let liveResult: Awaited<ReturnType<typeof researchWebsite>> | null = null;
-  if (settings.operationMode === "LIVE" && lead.website) {
+  // Try Firecrawl when the key is configured — works for any lead with a website.
+  if (lead.website) {
     liveResult = await researchWebsite(lead.business, lead.industry ?? "Service business", lead.website);
   }
 
@@ -903,8 +904,8 @@ async function sendOffer(
   settings: SettingsDoc,
 ) {
   const biz =
-    findDemoBusiness(lead.business) ??
-    (DEMO_BUSINESSES[0] as DemoBusiness);
+    findBusinessPoolEntry(lead.business) ??
+    (BUSINESS_POOL[0] as BusinessPoolEntry);
   const rec = computeRecommendation(biz, settings.pricing);
   const { subject, body } = buildOffer(biz, settings, rec);
   const t = now();
@@ -929,7 +930,7 @@ async function sendOffer(
       html: body.replace(/\n/g, "<br/>"),
       fromAddress: settings.email.fromAddress ?? undefined,
       fromName: settings.email.fromName ?? undefined,
-      forceLive: settings.operationMode === "LIVE",
+      forceLive: true,
     });
   }
 
@@ -1457,7 +1458,7 @@ ${settings.agencySignature ?? "The B2K Agency team"}`;
         html: deliveryBody.replace(/\n/g, "<br/>"),
         fromAddress: settings.email.fromAddress ?? undefined,
         fromName: settings.email.fromName ?? undefined,
-        forceLive: settings.operationMode === "LIVE",
+        forceLive: true,
       });
     }
 
